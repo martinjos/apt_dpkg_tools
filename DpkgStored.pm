@@ -61,8 +61,8 @@ sub new {
     }
     tie %{$s->{db}}, 'Tie::DBI', {db => $dbconn, table => 'hash', key => 'k', CLOBBER => 3};
     if ($need_refresh) {
-	print "Reloading database from $filename\n";
-	open(my $fh, '<', $filename) or die "Can't open $filename";
+	print "Reloading database from $s->{ffn}\n";
+	open(my $fh, '<', $s->{ffn}) or die "Can't open $s->{ffn}";
 	my $pkg;
 	#%{$s->{db}} = (); # clear all
 	my $block;
