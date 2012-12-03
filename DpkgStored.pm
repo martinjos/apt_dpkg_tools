@@ -9,7 +9,7 @@ use File::Copy qw(copy);
 my $loc = "$ENV{HOME}/.perl-dpkg-stored";
 my $done_init = 0;
 
-sub _init {
+sub _init_dir {
     return if $done_init;
     
     if (!-e $loc) {
@@ -29,7 +29,7 @@ sub new {
 	die "$filename does not exist";
     }
     my $s = bless {};
-    $s->_init;
+    $s->_init_dir;
     $s->{ffn} = $filename; # "flat" file
     my $label = ($filename =~ tr:/:_:r);
     $s->{fn} = "$loc/$label.sqlite";
@@ -40,7 +40,7 @@ sub new {
     my $dbconn = 'dbi:SQLite:dbname='.$s->{fn};
     if (! -e $s->{fn}) {
 	print "Creating table\n";
-	$need_refresh = 1;
+	$need_refresh = 2;
 	my $dbh = DBI->connect($dbconn,'','');
 	$dbh->do('create table hash (k text primary key, v text);');
 	$dbh->disconnect;
@@ -60,34 +60,49 @@ sub new {
 	die "$s->{fn} is not an ordinary file";
     }
     tie %{$s->{db}}, 'Tie::DBI', {db => $dbconn, table => 'hash', key => 'k', CLOBBER => 3};
-    if ($need_refresh) {
-	$s->repopulate_db
+    if ($need_refresh == 2) {
+	$s->_populate_db
+    } elsif ($need_refresh == 1) {
+	$s->_repopulate_db
     }
     return $s;
 }
 
-sub repopulate_db {
-    print "Reloading database from $s->{ffn}\n";
+sub _add_block {
+    my ($s, $block) = @_;
+    if ($block =~ /^Package\s*:\s*(.*)$/m) {
+	$pkg = $1;
+	#warn "Trying to add $pkg...";
+	if (!defined(eval {
+	    $s->{db}{$pkg} = {v => $block};
+	})) {
+	    #die "Failed to add package $pkg with data:\n$block\nError: $@\n";
+	    die "Failed to add package $pkg, Error: $@\n";
+	}
+    } else {
+	warn "No package name in block: $block";
+    }
+}
+
+sub _populate_db {
+    my ($s) = @_;
+    print "Loading database from $s->{ffn}\n";
     open(my $fh, '<', $s->{ffn}) or die "Can't open $s->{ffn}";
     my $pkg;
     #%{$s->{db}} = (); # clear all
     my $block;
     local $/ = "\n\n"; # get blocks instead of lines
     while (defined($block = <$fh>)) {
-	if ($block =~ /^Package\s*:\s*(.*)$/m) {
-	    $pkg = $1;
-	    #warn "Trying to add $pkg...";
-	    if (!defined(eval {
-		$s->{db}{$pkg} = {v => $block};
-			 })) {
-		#die "Failed to add package $pkg with data:\n$block\nError: $@\n";
-		die "Failed to add package $pkg, Error: $@\n";
-	    }
-	} else {
-	    warn "No package name in block: $block";
-	}
+	$s->_add_block($block)
     }
     close($fh);
+    copy($s->{ffn}, $s->{ofn}); # save backup for next time
+}
+
+sub _repopulate_db {
+    my ($s) = @_;
+    print "Reloading database from $s->{ffn} using diffs in $s->{dfn}\n";
+
     copy($s->{ffn}, $s->{ofn}); # save backup for next time
 }
 
