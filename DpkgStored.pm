@@ -61,30 +61,34 @@ sub new {
     }
     tie %{$s->{db}}, 'Tie::DBI', {db => $dbconn, table => 'hash', key => 'k', CLOBBER => 3};
     if ($need_refresh) {
-	print "Reloading database from $s->{ffn}\n";
-	open(my $fh, '<', $s->{ffn}) or die "Can't open $s->{ffn}";
-	my $pkg;
-	#%{$s->{db}} = (); # clear all
-	my $block;
-	local $/ = "\n\n"; # get blocks instead of lines
-	while (defined($block = <$fh>)) {
-	    if ($block =~ /^Package\s*:\s*(.*)$/m) {
-		$pkg = $1;
-		#warn "Trying to add $pkg...";
-		if (!defined(eval {
-		    $s->{db}{$pkg} = {v => $block};
-			     })) {
-		    #die "Failed to add package $pkg with data:\n$block\nError: $@\n";
-		    die "Failed to add package $pkg, Error: $@\n";
-		}
-	    } else {
-		warn "No package name in block: $block";
-	    }
-	}
-	close($fh);
-	copy($s->{ffn}, $s->{ofn}); # save backup for next time
+	$s->repopulate_db
     }
     return $s;
+}
+
+sub repopulate_db {
+    print "Reloading database from $s->{ffn}\n";
+    open(my $fh, '<', $s->{ffn}) or die "Can't open $s->{ffn}";
+    my $pkg;
+    #%{$s->{db}} = (); # clear all
+    my $block;
+    local $/ = "\n\n"; # get blocks instead of lines
+    while (defined($block = <$fh>)) {
+	if ($block =~ /^Package\s*:\s*(.*)$/m) {
+	    $pkg = $1;
+	    #warn "Trying to add $pkg...";
+	    if (!defined(eval {
+		$s->{db}{$pkg} = {v => $block};
+			 })) {
+		#die "Failed to add package $pkg with data:\n$block\nError: $@\n";
+		die "Failed to add package $pkg, Error: $@\n";
+	    }
+	} else {
+	    warn "No package name in block: $block";
+	}
+    }
+    close($fh);
+    copy($s->{ffn}, $s->{ofn}); # save backup for next time
 }
 
 sub get {
