@@ -69,10 +69,12 @@ sub new {
 }
 
 sub _add_block {
-    my ($s, $block) = @_;
+    my ($s, $block, $verbose) = @_;
     if ($block =~ /^Package\s*:\s*(.*)$/m) {
 	$pkg = $1;
-	#warn "Trying to add $pkg...";
+	if ($verbose) {
+	    print "Adding or updating package $pkg\n";
+	}
 	if (!defined(eval {
 	    $s->{db}{$pkg} = {v => $block};
 	})) {
@@ -84,16 +86,45 @@ sub _add_block {
     }
 }
 
+sub _remove_package {
+    my ($s, $pkg) = @_;
+    print "Removing package $pkg (may be re-added later)\n";
+    if (!defined(eval {
+	delete $s->{db}{$pkg};
+    })) {
+	warn "Failed to remove package $pkg, Error: $@\n";
+    }
+}
+
+sub _in_range {
+    # N.B.: $start and $end are both inclusive
+    my ($start, $end, $ranges) = @_;
+    foreach my $range (@$ranges) {
+	my ($rs, $rlen) = @$range;
+	if ($rs <= $end && $rs + $rlen > $start) {
+	    return 1;
+	}
+    }
+    return 0;
+}
+
 sub _populate_db {
-    my ($s) = @_;
-    print "Loading database from $s->{ffn}\n";
+    my ($s, $ranges) = @_;
+    print "Loading database from $s->{ffn}\n" if !defined($ranges);
     open(my $fh, '<', $s->{ffn}) or die "Can't open $s->{ffn}";
     my $pkg;
     #%{$s->{db}} = (); # clear all
     my $block;
     local $/ = "\n\n"; # get blocks instead of lines
+    my ($startline, $endline) = (1, 1);
     while (defined($block = <$fh>)) {
-	$s->_add_block($block)
+	$nls = $block;
+	$nls =~ s/[^\n]+//gs; # get only the newlines
+	$startline = $endline;
+	$endline = $startline + length($nls); # count the newlines
+	if (!defined($ranges) || _in_range($startline, $endline - 1, $ranges)) {
+	    $s->_add_block($block, defined($ranges));
+	}
     }
     close($fh);
     copy($s->{ffn}, $s->{ofn}); # save backup for next time
@@ -102,8 +133,23 @@ sub _populate_db {
 sub _repopulate_db {
     my ($s) = @_;
     print "Reloading database from $s->{ffn} using diffs in $s->{dfn}\n";
-
-    copy($s->{ffn}, $s->{ofn}); # save backup for next time
+    open(my $dfh, '<', $s->{dfh}) or die "Can't open $s->{dfn}";
+    my $line;
+    my $ranges = [];
+    while (defined($line = <$dfh>)) {
+	if ($line =~ /^\<\ Package\s*:\s*(.*)$/m) {
+	    $s->_remove_package($1);
+	} elsif ($line =~ / ^ [0-9]+ [acd] ([0-9]+) (?: , ([0-9]+) ) $ /x) {
+	    my ($start, $end) = ($1, $2, $3, $4);
+	    my $len = 0;
+	    if (defined($end)) {
+		$len = $end - $start + 1;
+	    }
+	    push(@{$ranges}, [$start, $len]);
+	}
+    }
+    close($dfh);
+    $s->_populate_db($ranges);
 }
 
 sub get {
