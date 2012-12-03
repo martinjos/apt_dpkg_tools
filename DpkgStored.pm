@@ -4,6 +4,7 @@ use File::Path;
 use DBI;
 use Tie::DBI;
 use DBD::SQLite;
+use File::Copy qw(copy);
 
 my $loc = "$ENV{HOME}/.perl-dpkg-stored";
 my $done_init = 0;
@@ -29,8 +30,11 @@ sub new {
     }
     my $s = bless {};
     $s->_init;
-    $s->{filename} = $filename;
-    $s->{fn} = "$loc/" . ($filename =~ tr:/:_:r) . ".sqlite";
+    $s->{ffn} = $filename; # "flat" file
+    my $label = ($filename =~ tr:/:_:r);
+    $s->{fn} = "$loc/$label.sqlite";
+    $s->{ofn} = "$loc/$label.old"; # "old" file
+    $s->{dfn} = "$loc/$label.diff"; # "diff" file
     my $need_refresh = 0;
     $s->{db} = {};
     my $dbconn = 'dbi:SQLite:dbname='.$s->{fn};
@@ -41,6 +45,9 @@ sub new {
 	$dbh->do('create table hash (k text primary key, v text);');
 	$dbh->disconnect;
     } else {
+	if (-e $s->{ofn}) {
+	    system("diff '$s->{ofn}' '$s->{ffn}' > '$s->{dfn}'");
+	}
 	my @stat_text = stat($filename);
 	my @stat_db = stat($s->{fn});
 	if ($stat_text[9] >= $stat_db[9]) {
@@ -57,7 +64,7 @@ sub new {
 	print "Reloading database from $filename\n";
 	open(my $fh, '<', $filename) or die "Can't open $filename";
 	my $pkg;
-	#$s->{db} = {}; # clear all?
+	#%{$s->{db}} = (); # clear all
 	my $block;
 	local $/ = "\n\n"; # get blocks instead of lines
 	while (defined($block = <$fh>)) {
@@ -76,6 +83,7 @@ sub new {
 	}
 	close($fh);
     }
+    copy($s->{ffn}, $s->{ofn}); # save backup for next time
     return $s;
 }
 
