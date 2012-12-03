@@ -359,11 +359,24 @@ sub _run_query {
     }
     local($^W) = 0;  # kill uninitialized variable warning
     # if we get here, then we can't bind, so we replace ? with escaped parameters
-    while ( (my $pos = index($query, '?')) >= 0 ) {
-      my $value = shift(@bind_variables);
-      substr($query, $pos, 1) = (defined($value) ? $value : 'null');
+
+    # replaced buggy code with my own code that actually works
+
+    my ($startpos, $pos) = (0, 0);
+    my $newquery = '';
+    while (($pos = index($query, '?', $startpos)) >= 0) {
+	#print "In loop with ($startpos, $pos)\n";
+	my $value = shift(@bind_variables);
+	$newquery .= substr($query, $startpos, $pos - $startpos);
+	$newquery .= (defined($value) ? $value : 'null');
+	$startpos = $pos+1;
     }
-    my $sth = $self->{'dbh'}->prepare($query);
+    $newquery .= substr($query, $startpos);
+
+    #print "Preparing statement $newquery\n";
+    #die "Here it is" if $newquery =~ /\?/;
+
+    my $sth = $self->{'dbh'}->prepare($newquery);
     return unless $sth && $sth->execute;
     return $sth;
 }
