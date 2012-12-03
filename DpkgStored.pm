@@ -48,9 +48,7 @@ sub new {
 	if (-e $s->{ofn}) {
 	    system("diff '$s->{ofn}' '$s->{ffn}' > '$s->{dfn}'");
 	}
-	my @stat_text = stat($filename);
-	my @stat_db = stat($s->{fn});
-	if ($stat_text[9] >= $stat_db[9]) {
+	if (-s $s->{dfn}) {
 	    print "Updating table\n";
 	    $need_refresh = 1;
 	}
@@ -128,28 +126,40 @@ sub _populate_db {
     }
     close($fh);
     copy($s->{ffn}, $s->{ofn}); # save backup for next time
+    print "\n" if !defined($ranges);
 }
 
 sub _repopulate_db {
     my ($s) = @_;
-    print "Reloading database from $s->{ffn} using diffs in $s->{dfn}\n";
-    open(my $dfh, '<', $s->{dfh}) or die "Can't open $s->{dfn}";
+    print "Reloading database from $s->{ffn} using diffs in $s->{dfn} (size = " . (-s $s->{dfn}) . ")\n";
+    open(my $dfh, '<', $s->{dfn}) or die "Can't open $s->{dfn}";
     my $line;
     my $ranges = [];
     while (defined($line = <$dfh>)) {
+	#print $line;
 	if ($line =~ /^\<\ Package\s*:\s*(.*)$/m) {
+	    #print "Package removed\n";
 	    $s->_remove_package($1);
-	} elsif ($line =~ / ^ [0-9]+ [acd] ([0-9]+) (?: , ([0-9]+) ) $ /x) {
-	    my ($start, $end) = ($1, $2, $3, $4);
+	} elsif ($line =~ / ^ [0-9]+ ([acd]) ([0-9]+) (?: \, ([0-9]+) )? $ /mx) {
+	    #print "Something added or changed\n";
+	    my ($op, $start, $end) = ($1, $2, $3);
 	    my $len = 0;
 	    if (defined($end)) {
 		$len = $end - $start + 1;
+	    } elsif ($op =~ /[ac]/) {
+		$len = 1;
 	    }
 	    push(@{$ranges}, [$start, $len]);
 	}
     }
     close($dfh);
+    #print scalar(@$ranges) . "\n";
+    #foreach my $range (@$ranges) {
+	#my ($rs, $rlen) = @$range;
+	#print "$rs $rlen\n";
+    #}
     $s->_populate_db($ranges);
+    print "\n";
 }
 
 sub get {
