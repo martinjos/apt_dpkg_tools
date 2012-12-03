@@ -1,0 +1,9 @@
+#!/usr/bin/perl -w
+use strict;
+
+my $pkg = $ARGV[0];
+
+my @deps = split(/\s*,\s*/, `dpkg-query -W -f '\${Depends}' $pkg`);
+foreach my $dep (@deps) {
+    print "$dep\n";
+}

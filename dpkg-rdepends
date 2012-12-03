@@ -1,0 +1,48 @@
+#!/usr/bin/perl -w
+use strict;
+
+use Dpkg::Index;
+
+my $indexfile = '/var/lib/dpkg/status';
+
+my $pkg = $ARGV[0];
+
+my @deps = `apt-cache rdepends $pkg`;
+@deps = map({chomp; $_} @deps);
+if ($deps[0] eq $pkg && $deps[1] =~ /^\S.*:$/) {
+    @deps = splice(@deps, 2);
+} else {
+    @deps = ();
+}
+@deps = map({s/^\s*[\|]?//; $_} @deps);
+
+my $idx = Dpkg::Index->new;
+$idx->load($indexfile);
+
+my ($cpkg, $info, $stat);
+@deps = grep({
+    $cpkg = $_;
+    $info = $idx->get_by_key($cpkg);
+    #$stat = $info->{'Status'};
+    if (!defined($info)) {
+	#warn "Entry not found for $cpkg";
+	0;
+    } else {
+	$stat = $info->{'status'};
+	if (defined($stat) && $stat =~ /\S+\s+\S+\s+(\S+)/) {
+	    #warn "Yaay! got status field!";
+	    !($1 eq 'not-installed' || $1 eq 'config-files');
+	} elsif (defined($stat)) {
+	    warn "Something wrong with Status field for $cpkg";
+	    0;
+	} else {
+	    warn "No Status field for $cpkg";
+	    print $info->output;
+	    0;
+	}
+    }
+} @deps);
+
+foreach my $dep (@deps) {
+    print "$dep\n";
+}
