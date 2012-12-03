@@ -82,8 +82,8 @@ sub new {
 	    }
 	}
 	close($fh);
+	copy($s->{ffn}, $s->{ofn}); # save backup for next time
     }
-    copy($s->{ffn}, $s->{ofn}); # save backup for next time
     return $s;
 }
 
